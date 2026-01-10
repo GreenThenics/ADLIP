@@ -5,7 +5,29 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Absolute path to datasets - use env var for flexibility
-DATASET_DIR = os.getenv("OSINT_DATASET_DIR", "/usr/src/app/osint_datasets_files")
+def get_dataset_dir():
+    # 1. Environment Variable
+    env_path = os.getenv("OSINT_DATASET_DIR")
+    if env_path and os.path.exists(env_path):
+        return env_path
+    
+    # 2. Docker Container Path
+    docker_path = "/usr/src/app/osint_datasets_files"
+    if os.path.exists(docker_path):
+        return docker_path
+        
+    # 3. Local Development Path (Assumes sibling to backend)
+    # This file is in backend/app/osint, so we go up 3 levels to find project root
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+    local_path = os.path.join(base_dir, "osint_datasets_files")
+    if os.path.exists(local_path):
+        return local_path
+
+    # Default fallback
+    return "/usr/src/app/osint_datasets_files"
+
+# Absolute path to datasets - use env var for flexibility
+DATASET_DIR = get_dataset_dir()
 
 def load_file_as_set(filename):
     path = os.path.join(DATASET_DIR, filename)

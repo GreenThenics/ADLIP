@@ -203,9 +203,6 @@ def get_leaks(task_id):
         return jsonify({"error": str(e)}), 500
 
 
-@scanner_bp.route("/ui", methods=["GET"])
-def dashboard_ui():
-    return render_template("dashboard.html")
 
 @scanner_bp.route("/task_logs/<task_id>", methods=["GET"])
 def get_task_logs(task_id):

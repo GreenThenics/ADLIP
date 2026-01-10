@@ -791,6 +791,9 @@ function renderLeaksTable() {
                 <div class="mb-1"><strong>${leak.pattern || "Secret Detected"}</strong></div>
                 <div class="d-flex flex-wrap">${badgesHtml}</div>
                 ${leak.url ? `<div class="small text-secondary mt-1 text-truncate" style="max-width: 300px;" title="${leak.url}">${leak.url}</div>` : ''}
+                <button class="btn btn-sm btn-outline-info mt-2" onclick="viewOsintProof(${allLeaksData.indexOf(leak)})" style="font-size: 0.75rem;">
+                    👁️ View Evidence
+                </button>
             </td>
             <td style="width: 45%;">
                 <pre class="log-box-cyber mb-0" style="max-height: 80px; font-size: 0.75rem; white-space: pre-wrap;">${leak.excerpt || leak.snippet || "[no snippet]"}</pre>
@@ -847,31 +850,231 @@ function showRisk(score) {
         const progress = Math.min(elapsed / duration, 1);
 
         const currentScore = Math.floor(progress * score);
-        el.innerText = currentScore;
+        el.innerText = currentScore; // Update only the text
 
         if (progress < 1) {
             requestAnimationFrame(update);
+        } else {
+            // Final color set
+            let labelText = "Low";
+            let colorClass = "risk-low";
+
+            // Remove old classes
+            circle.classList.remove("risk-low", "risk-medium", "risk-high");
+
+            if (score >= 70) {
+                labelText = "High Risk";
+                colorClass = "risk-high";
+                label.style.color = "#ef4444";
+            } else if (score >= 40) {
+                labelText = "Medium Risk";
+                colorClass = "risk-medium";
+                label.style.color = "#f59e0b";
+            } else {
+                label.style.color = "#10b981";
+            }
+
+            label.innerText = labelText;
+            circle.classList.add(colorClass);
         }
     }
-    requestAnimationFrame(update);
 
-    // Color logic
-    if (score >= 70) {
-        circle.style.borderColor = "var(--accent-danger)";
-        el.style.color = "var(--accent-danger)";
-        label.innerText = "Critical";
-        label.style.color = "var(--accent-danger)";
-    } else if (score >= 40) {
-        circle.style.borderColor = "var(--accent-warning)";
-        el.style.color = "var(--accent-warning)";
-        label.innerText = "Medium";
-        label.style.color = "var(--accent-warning)";
+    requestAnimationFrame(update);
+}
+
+// ===============================
+// OSINT PROOF MODAL
+// ===============================
+function viewOsintProof(index) {
+    const leak = allLeaksData[index];
+    if (!leak) return;
+
+    const osint = leak.osint || {};
+    const metadata = osint.metadata || {};
+    const risk = leak.risk || {};
+
+    // 1. Brief Generation
+    const briefEl = document.getElementById("osintBrief");
+    const severity = (risk.severity || "low").toUpperCase();
+    const factors = risk.factors || [];
+
+    let briefText = `SUBJECT: ${leak.category || "UNKNOWN_SECRET"}\n`;
+    briefText += `SEVERITY: ${severity} (SCORE: ${risk.score || 0})\n`;
+    briefText += `STATUS:  EXPOSED\n\n`;
+    briefText += `INTELLIGENCE ASSESSMENT:\n`;
+
+    if (factors.length > 0) {
+        factors.forEach(f => briefText += `- ${f}\n`);
     } else {
-        circle.style.borderColor = "var(--accent-success)";
-        el.style.color = "var(--accent-success)";
-        label.innerText = "Low";
-        label.style.color = "var(--accent-success)";
+        briefText += `- Automated correlation detected potential exposure.\n`;
+        briefText += `- Manual verification recommended.\n`;
     }
+
+    if (metadata.domain_type === "breached_org") {
+        briefText += `\n[!] CRITICAL: Domain linked to known breaches.\n`;
+    }
+
+    briefEl.innerText = briefText;
+
+    // 2. Exposure Context
+    const exposureList = document.getElementById("exposureContextList");
+    const exposureBox = document.getElementById("exposureContextBox");
+    exposureList.innerHTML = "";
+    exposureBox.classList.remove("empty-state-box");
+
+    const contextItems = [];
+    if (leak.url) contextItems.push({ label: "Source URL", val: leak.url, icon: "🌐" });
+    if (leak.source_file) contextItems.push({ label: "File Path", val: leak.source_file, icon: "📁" });
+    if (metadata.exposure_surface) contextItems.push({ label: "Attack Vector", val: metadata.exposure_surface, icon: "🎯" });
+
+    if (contextItems.length === 0) {
+        exposureBox.classList.add("empty-state-box");
+        exposureList.innerHTML = "<li class='text-center opacity-75'>No exposure context identified.</li>";
+    } else {
+        contextItems.forEach(item => {
+            exposureList.innerHTML += `
+                <li class="mb-2 d-flex align-items-center">
+                    <span class="me-2">${item.icon}</span>
+                    <div>
+                        <strong class="d-block">${item.label}</strong>
+                        <span style="word-break: break-all;">${item.val}</span>
+                    </div>
+                </li>
+            `;
+        });
+    }
+
+    // 3. Infrastructure
+    const infraList = document.getElementById("infraList");
+    const infraBox = document.getElementById("infraBox");
+    infraList.innerHTML = "";
+    infraBox.classList.remove("empty-state-box");
+
+    const infraItems = [];
+    if (metadata.domain) infraItems.push({ label: "Domain", val: metadata.domain });
+    if (metadata.domain_type) infraItems.push({ label: "Domain Reputation", val: metadata.domain_type });
+    if (metadata.cloud_provider) infraItems.push({ label: "Cloud Provider", val: metadata.cloud_provider });
+
+    if (infraItems.length === 0) {
+        infraBox.classList.add("empty-state-box");
+        infraList.innerHTML = "<li class='text-center opacity-75'>No infrastructure signals detected.</li>";
+    } else {
+        infraItems.forEach(item => {
+            infraList.innerHTML += `
+                <li class="mb-2 border-bottom border-secondary pb-1 code-font">
+                    <span class="text-info">${item.label}:</span> <span>${item.val}</span>
+                </li>
+            `;
+        });
+    }
+
+    // 4. Verification Links (Dorks)
+    // 4. Verification Links (Dynamic Dorks)
+    const linksDiv = document.getElementById("verificationLinks");
+    linksDiv.innerHTML = "";
+
+    const dorks = generateDynamicDorks(leak, metadata);
+
+    dorks.forEach(dork => {
+        const query = encodeURIComponent(dork.query);
+        const url = `https://www.google.com/search?q=${query}`;
+        // Special handling for non-google links if needed, but mostly google
+        const finalUrl = dork.url || url;
+
+        linksDiv.innerHTML += `
+            <a href="${finalUrl}" target="_blank" class="btn btn-sm verify-btn" title="${dork.query}">
+                ${dork.icon} ${dork.label}
+            </a>
+        `;
+    });
+    // Show Modal
+    const modal = new bootstrap.Modal(document.getElementById('osintProofModal'));
+    modal.show();
+}
+
+function generateDynamicDorks(leak, metadata) {
+    const dorks = [];
+    const domain = metadata.domain || (leak.url ? new URL(leak.url).hostname : null);
+
+    if (!domain) return [];
+
+    // 1. Standard Reputation Checks
+    dorks.push({
+        label: "VirusTotal Reputation",
+        url: `https://www.virustotal.com/gui/domain/${domain}`,
+        icon: "🦠",
+        query: `site:virustotal.com "${domain}"`
+    });
+
+    dorks.push({
+        label: "Whois Lookup",
+        url: `https://who.is/whois/${domain}`,
+        icon: "🔍",
+        query: `whois ${domain}`
+    });
+
+    // 2. Context-Aware Dorks
+
+    // A. File Extension Dorks
+    if (leak.source_file) {
+        const ext = leak.source_file.split('.').pop();
+        if (['env', 'json', 'yaml', 'yml', 'conf', 'config', 'ini', 'xml'].includes(ext)) {
+            dorks.push({
+                label: `Find Exposed .${ext} files`,
+                query: `site:${domain} ext:${ext}`,
+                icon: "📄"
+            });
+            dorks.push({
+                label: `Index of .${ext}`,
+                query: `site:${domain} intitle:"index of" "${leak.source_file}"`,
+                icon: "📂"
+            });
+        }
+    }
+
+    // B. Platform Specific
+    if (leak.url && leak.url.includes("github.com")) {
+        dorks.push({
+            label: "Search GitHub for Domain",
+            query: `site:github.com "${domain}"`,
+            icon: "🐙"
+        });
+    } else if (leak.url && leak.url.includes("pastebin.com")) {
+        dorks.push({
+            label: "Search Pastebin for Domain",
+            query: `site:pastebin.com "${domain}"`,
+            icon: "📋"
+        });
+    }
+
+    // C. Content Specific (Snippet Analysis)
+    if (leak.excerpt) {
+        // AWS Keys
+        if (leak.excerpt.includes("AKIA") || leak.excerpt.includes("ASIA")) {
+            dorks.push({
+                label: "Exposed AWS Keys",
+                query: `site:${domain} "AKIA" OR "ASIA"`,
+                icon: "☁️"
+            });
+        }
+        // Private Keys
+        if (leak.excerpt.includes("BEGIN RSA PRIVATE KEY")) {
+            dorks.push({
+                label: "Exposed Private Keys",
+                query: `site:${domain} "BEGIN RSA PRIVATE KEY"`,
+                icon: "🔑"
+            });
+        }
+    }
+
+    // D. Generic Catch-All (if no specific ones found, fallback to site search)
+    dorks.push({
+        label: "Site Search",
+        query: `site:${domain}`,
+        icon: "🔎"
+    });
+
+    return dorks;
 }
 
 // ===============================

@@ -1,4 +1,4 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, render_template
 from .config import MONGO_URI
 from .extensions import mongo
 from app.utils.leak_detector import load_patterns_from_db
@@ -26,6 +26,10 @@ def create_app():
     # simple root
     @app.route("/")
     def index():
-        return jsonify({"service": "ADLIP-v2-backend", "status": "ok"})
+        return render_template("index.html")
+
+    @app.route("/dashboard")
+    def dashboard():
+        return render_template("dashboard.html")
 
     return app
