@@ -889,6 +889,12 @@ function viewOsintProof(index) {
     const leak = allLeaksData[index];
     if (!leak) return;
 
+    // AI MVP State
+    currentLeakData = leak;
+    document.getElementById("aiExplanationContent").style.display = "none";
+    document.getElementById("askAiBtn").disabled = false;
+    document.getElementById("askAiBtn").innerText = "✨ Ask AI";
+
     const osint = leak.osint || {};
     const metadata = osint.metadata || {};
     const risk = leak.risk || {};
@@ -1099,4 +1105,90 @@ function toggleTheme() {
 
     // Refresh charts to update colors
     loadDashboardData();
+}
+
+// ===============================
+// AI CHATBOT MVP
+// ===============================
+let currentLeakData = null; // Also declared at top of scope implicitly if handled correctly, but safety here.
+// Actually, I already used `currentLeakData` in `viewOsintProof` which suggests it should be global.
+// I will ensure it's defined globally by placing it here or I should have defined it at the top.
+// JavaScript `let` is block scoped. If I define it here at top level it is global.
+// Usage in `viewOsintProof` (which is defined earlier) might be an issue if it's let and not hoisted.
+// `var` is hoisted. `let` is not.
+// However, `viewOsintProof` is called *after* the file is loaded (on click), so the TDZ (Temporal Dead Zone) shouldn't be an issue if this script runs fully.
+// But to be safe, I should change the previous `replace` to NOT assume it exists, or define it at the top.
+// I'll check if I can modify the top of the file easily. 
+// Or I can just use `window.currentLeakData` to be safe.
+
+function askAiExplanation() {
+    if (!currentLeakData) return;
+
+    const btn = document.getElementById("askAiBtn");
+    const contentDiv = document.getElementById("aiExplanationContent");
+    const loadingDiv = document.getElementById("aiLoading");
+    const textDiv = document.getElementById("aiText");
+
+    // UI State: Loading
+    btn.disabled = true;
+    contentDiv.style.display = "block";
+    loadingDiv.style.display = "block";
+    textDiv.innerText = "";
+    textDiv.style.display = "none";
+
+    // Prepare Payload
+    const risk = currentLeakData.risk || {};
+    const mlAnalysis = risk.ml_analysis || {};
+
+    // Map top_features to readable strings for "ml_summary"
+    // Handle if top_features is undefined or empty
+    const topFeats = mlAnalysis.top_features || [];
+
+    // FIX: Convert features to QUALITATIVE descriptions only. No numbers.
+    const featureMap = {
+        "is_valid": "Validation Status",
+        "is_plausible": "Plausibility Check",
+        "category_score": "Secret Category Sensitivity",
+        "entropy": "Randomness/Entropy",
+        "length": "Key Length",
+        "is_public": "Public Exposure",
+        "is_admin": "Admin Context",
+        "has_domain": "Domain Context"
+    };
+
+    const mlSummary = topFeats.map(f => {
+        const featName = featureMap[f.feature] || f.feature;
+        return `Analyzed ${featName}`;
+    });
+
+    // If we have score uplift/reasoning from backend that is numeric, we DO NOT send it.
+    // We only send the fact that ML was used.
+
+    const payload = {
+        severity: risk.severity || "Unknown",
+        // FIX: Send Band/Label instead of raw score to prevent "17 points" calc talk
+        risk_score: risk.severity || "Unknown",
+        risk_factors: risk.factors || [],
+        ml_summary: mlSummary
+    };
+
+    fetch("/api/ai/explain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+    })
+        .then(r => r.json())
+        .then(data => {
+            loadingDiv.style.display = "none";
+            textDiv.style.display = "block";
+            textDiv.innerText = data.explanation || "No explanation returned.";
+            btn.innerText = "✨ Ask AI (Regenerate)";
+            btn.disabled = false;
+        })
+        .catch(err => {
+            loadingDiv.style.display = "none";
+            textDiv.style.display = "block";
+            textDiv.innerText = "Error: " + err.message;
+            btn.disabled = false;
+        });
 }

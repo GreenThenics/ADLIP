@@ -437,7 +437,28 @@
                             </div>
                         </div>
 
-                        <!-- 4. One-Click Verification -->
+                        <!-- 4. AI Risk Explanation -->
+                        <div class="mt-4 pt-2 border-top border-secondary border-opacity-10" id="aiExplanationSection">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="modal-section-header" style="color: var(--accent-primary) !important;">
+                                    AI Risk Explanation
+                                </span>
+                                <button class="btn btn-sm btn-outline-primary" id="askAiBtn"
+                                    onclick="askAiExplanation()">
+                                    ✨ Ask AI
+                                </button>
+                            </div>
+                            <div id="aiExplanationContent" class="p-3 box-container"
+                                style="min-height: 80px; display: none;">
+                                <div id="aiLoading" class="text-center" style="display: none;">
+                                    <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                    <span class="small ms-2">Analyzing risk factors...</span>
+                                </div>
+                                <div id="aiText" class="small text-light" style="white-space: pre-wrap;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 5. One-Click Verification -->
                         <div class="mt-4 pt-2 border-top border-secondary border-opacity-10">
                             <span class="modal-section-header" style="color: var(--accent-danger) !important;">
                                 One-Click Verification (Dark Web / Dorks)
