@@ -52,6 +52,25 @@ document.addEventListener("DOMContentLoaded", () => {
     if (riskFilter) {
         riskFilter.addEventListener("change", () => renderLeaksTable());
     }
+
+    // Go To Top Button Logic
+    const goTopBtn = document.getElementById("goToTopBtn");
+    if (goTopBtn) {
+        window.addEventListener("scroll", () => {
+            if (window.scrollY > 300) {
+                goTopBtn.classList.add("visible");
+            } else {
+                goTopBtn.classList.remove("visible");
+            }
+        });
+
+        goTopBtn.addEventListener("click", () => {
+            window.scrollTo({
+                top: 0,
+                behavior: "smooth"
+            });
+        });
+    }
 });
 
 // ===============================
@@ -1110,18 +1129,9 @@ function toggleTheme() {
 // ===============================
 // AI CHATBOT MVP
 // ===============================
-let currentLeakData = null; // Also declared at top of scope implicitly if handled correctly, but safety here.
-// Actually, I already used `currentLeakData` in `viewOsintProof` which suggests it should be global.
-// I will ensure it's defined globally by placing it here or I should have defined it at the top.
-// JavaScript `let` is block scoped. If I define it here at top level it is global.
-// Usage in `viewOsintProof` (which is defined earlier) might be an issue if it's let and not hoisted.
-// `var` is hoisted. `let` is not.
-// However, `viewOsintProof` is called *after* the file is loaded (on click), so the TDZ (Temporal Dead Zone) shouldn't be an issue if this script runs fully.
-// But to be safe, I should change the previous `replace` to NOT assume it exists, or define it at the top.
-// I'll check if I can modify the top of the file easily. 
-// Or I can just use `window.currentLeakData` to be safe.
+let currentLeakData = null;
 
-function askAiExplanation() {
+function askAiExplanation(promptType = 'explain') {
     if (!currentLeakData) return;
 
     const btn = document.getElementById("askAiBtn");
@@ -1169,7 +1179,10 @@ function askAiExplanation() {
         // FIX: Send Band/Label instead of raw score to prevent "17 points" calc talk
         risk_score: risk.severity || "Unknown",
         risk_factors: risk.factors || [],
-        ml_summary: mlSummary
+        ml_summary: mlSummary,
+        prompt_type: promptType, // Added prompt_type
+        category: currentLeakData.category || "General Secret",
+        pattern: currentLeakData.pattern || "Suspicious String"
     };
 
     fetch("/api/ai/explain", {
@@ -1182,7 +1195,7 @@ function askAiExplanation() {
             loadingDiv.style.display = "none";
             textDiv.style.display = "block";
             textDiv.innerText = data.explanation || "No explanation returned.";
-            btn.innerText = "✨ Ask AI (Regenerate)";
+            btn.innerText = "✨ Ask AI";
             btn.disabled = false;
         })
         .catch(err => {

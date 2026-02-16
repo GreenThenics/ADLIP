@@ -18,7 +18,8 @@ class RiskClassifier:
         self.classes = ["Low", "Medium", "High"]
         self.feature_names = [
             "is_valid", "is_plausible", "category_score", "entropy", 
-            "length", "is_public", "is_admin", "has_domain"
+            "length", "is_public", "is_admin", "has_domain",
+            "digit_ratio", "special_ratio", "upper_ratio", "is_hex"
         ]
         
     def _extract_features(self, finding):
@@ -33,7 +34,11 @@ class RiskClassifier:
             secret_length (int),
             is_public (0/1),
             is_admin (0/1),
-            has_domain_context (0/1)
+            has_domain_context (0/1),
+            digit_ratio (float),
+            special_ratio (float),
+            upper_ratio (float),
+            is_hex (0/1)
         ]
         """
         validation = finding.get("validation", {})
@@ -59,9 +64,25 @@ class RiskClassifier:
             
         # 3. Numeric Meta
         entropy = validation.get("entropy", 3.0) # default avg entropy
-        # Length normalized (capped at 100 to avoid skew)
-        length = len(finding.get("excerpt", "")) 
-        length = min(length, 100)
+        secret = finding.get("excerpt", "")
+        length = len(secret)
+        length_capped = min(length, 100)
+        
+        # Advanced Ratios
+        if length > 0:
+            digit_ratio = sum(c.isdigit() for c in secret) / length
+            special_ratio = sum(not c.isalnum() for c in secret) / length
+            upper_ratio = sum(c.isupper() for c in secret) / length
+            try:
+                int(secret, 16)
+                is_hex = 1
+            except ValueError:
+                is_hex = 0
+        else:
+            digit_ratio = 0.0
+            special_ratio = 0.0
+            upper_ratio = 0.0
+            is_hex = 0
         
         # 4. OSINT Booleans
         is_public = 1 if "PUBLICLY_EXPOSED_ARTIFACT" in labels else 0
@@ -73,10 +94,14 @@ class RiskClassifier:
             is_plausible, 
             cat_score, 
             entropy, 
-            length, 
+            length_capped, 
             is_public, 
             is_admin, 
-            has_domain
+            has_domain,
+            digit_ratio,
+            special_ratio,
+            upper_ratio,
+            is_hex
         ]
 
     def train_synthetic(self):
@@ -87,28 +112,28 @@ class RiskClassifier:
         X = []
         y = []
         
-        # Generate 1000 samples
-        # Logic: 
-        # - Valid + Critical = High
-        # - Valid + Generic = Medium/High
-        # - Invalid + Generic = Low
-        # - Plausible + Public = Medium
-        
+        # Generate 5000 samples for better coverage
         np.random.seed(42)
         
-        for _ in range(1000):
+        for _ in range(5000):
             # Randomize features
-            is_valid = np.random.choice([0, 1], p=[0.7, 0.3])
-            # If Valid, cannot be just Plausible (mutually exclusive usually, but for feats we treat separate)
+            is_valid = np.random.choice([0, 1], p=[0.8, 0.2]) # Rare to be valid
             is_plausible = 0 if is_valid else np.random.choice([0, 1])
             
             cat_score = np.random.choice([0, 1, 2], p=[0.5, 0.3, 0.2])
             entropy = np.random.normal(4.5, 1.0)
             length = np.random.normal(40, 15)
+            length = max(5, min(100, length))
             
-            is_public = np.random.choice([0, 1])
-            is_admin = np.random.choice([0, 1])
-            has_domain = np.random.choice([0, 1])
+            # New Ratios
+            digit_ratio = np.random.beta(2, 5) # Usually lower digits
+            special_ratio = np.random.beta(1, 5) # Usually low special chars
+            upper_ratio = np.random.beta(2, 2) # Balanced
+            is_hex = np.random.choice([0, 1], p=[0.7, 0.3])
+
+            is_public = np.random.choice([0, 1], p=[0.9, 0.1])
+            is_admin = np.random.choice([0, 1], p=[0.95, 0.05])
+            has_domain = np.random.choice([0, 1], p=[0.8, 0.2])
             
             # Label Logic (Simulate Ground Truth)
             score = 0
@@ -116,33 +141,52 @@ class RiskClassifier:
             if is_plausible: score += 20
             if cat_score == 2: score += 30
             elif cat_score == 1: score += 15
+            
+            # Entropy usually correlates with risk (higher entropy = more random/secure/real secret)
+            if entropy > 4.5: score += 10
+            elif entropy < 3.0: score -= 5
+            
+            if length > 20: score += 5
+            
+            # Hex strings often keys
+            if is_hex: score += 5
+            
             if is_public: score += 15
             if is_admin: score += 10
+            if has_domain: score += 5
             
             # Noise
-            score += np.random.normal(0, 5)
+            score += np.random.normal(0, 8) # More noise
             
             label = "Low"
-            if score > 70: label = "High"
-            elif score > 35: label = "Medium"
+            if score > 75: label = "High"
+            elif score > 40: label = "Medium"
             
-            X.append([is_valid, is_plausible, cat_score, entropy, length, is_public, is_admin, has_domain])
+            X.append([
+                is_valid, is_plausible, cat_score, entropy, length, 
+                is_public, is_admin, has_domain,
+                digit_ratio, special_ratio, upper_ratio, is_hex
+            ])
             y.append(label)
             
-        # Train
-        self.model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+        # Train - increased estimators for "stronger" model
+        self.model = RandomForestClassifier(n_estimators=200, max_depth=10, random_state=42)
         self.model.fit(X, y)
         
         # Save
         with open(MODEL_PATH, 'wb') as f:
             pickle.dump(self.model, f)
             
-        print("ML Model trained on synthetic data.")
+        print("ML Model (Enhanced) trained on synthetic data.")
 
     def load(self):
         if os.path.exists(MODEL_PATH):
-            with open(MODEL_PATH, 'rb') as f:
-                self.model = pickle.load(f)
+            try:
+                with open(MODEL_PATH, 'rb') as f:
+                    self.model = pickle.load(f)
+            except Exception:
+                 print("Model corrupted. Retraining...")
+                 self.train_synthetic()
         else:
             print("Model not found. Training new one...")
             self.train_synthetic()
@@ -157,15 +201,13 @@ class RiskClassifier:
         severity = self.model.predict(features)[0]
         
         # Predict Proba (Use this for granular scoring refinement)
-        # Classes are usually sorted lexicographically: High, Low, Medium (Check self.model.classes_)
-        # But we want a "Risk Score" out of 100.
-        # We can map class probs to a weighted score.
         probs = self.model.predict_proba(features)[0]
         classes = self.model.classes_ 
         
         # Calculate Weighted ML Score
         # Weights: Low=10, Medium=50, High=90
-        score_map = {"Low": 10, "Medium": 50, "High": 90}
+        # Dynamic Adjustment: varying weights slightly based on certainty? No, keep simple
+        score_map = {"Low": 15, "Medium": 55, "High": 95} # Shifted baseline slightly
         ml_score = 0
         for cls, prob in zip(classes, probs):
             ml_score += score_map.get(cls, 0) * prob
@@ -177,10 +219,11 @@ class RiskClassifier:
             indices = np.argsort(importances)[::-1]
             for i in range(min(3, len(indices))): # Top 3 features
                 idx = indices[i]
-                top_features.append({
-                    "feature": self.feature_names[idx],
-                    "importance": float(importances[idx])
-                })
+                if idx < len(self.feature_names):
+                    top_features.append({
+                        "feature": self.feature_names[idx],
+                        "importance": float(importances[idx])
+                    })
             
         return ml_score, severity, top_features
 

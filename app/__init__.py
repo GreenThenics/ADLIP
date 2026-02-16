@@ -11,7 +11,7 @@ def create_app():
 
     # initialize extensions
     mongo.init_app(app)
-
+    
     # register blueprints
     from .blueprints.scanner import scanner_bp
     from .blueprints.health import health_bp

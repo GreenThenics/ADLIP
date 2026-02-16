@@ -443,10 +443,23 @@
                                 <span class="modal-section-header" style="color: var(--accent-primary) !important;">
                                     AI Risk Explanation
                                 </span>
-                                <button class="btn btn-sm btn-outline-primary" id="askAiBtn"
-                                    onclick="askAiExplanation()">
-                                    ✨ Ask AI
-                                </button>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button"
+                                        id="askAiBtn" data-bs-toggle="dropdown" aria-expanded="false">
+                                        ✨ Ask AI
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end dropdown-menu-dark"
+                                        style="background-color: var(--bg-secondary); border-color: var(--border-color);">
+                                        <li><button class="dropdown-item" type="button"
+                                                onclick="askAiExplanation('explain')">Explain Vulnerability</button>
+                                        </li>
+                                        <li><button class="dropdown-item" type="button"
+                                                onclick="askAiExplanation('executive')">Generate Executive
+                                                Summary</button></li>
+                                        <li><button class="dropdown-item" type="button"
+                                                onclick="askAiExplanation('client')">Simplify for Client</button></li>
+                                    </ul>
+                                </div>
                             </div>
                             <div id="aiExplanationContent" class="p-3 box-container"
                                 style="min-height: 80px; display: none;">
@@ -476,6 +489,11 @@
             </div>
         </div>
     </div>
+
+    <!-- Go To Top Button -->
+    <button id="goToTopBtn" class="btn-go-top" title="Go to Top">
+        ↑
+    </button>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>

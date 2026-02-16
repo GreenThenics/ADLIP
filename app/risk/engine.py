@@ -23,23 +23,26 @@ class RiskEngine:
             ml_score, ml_severity, ml_top_features = self.classifier.predict(finding)
             
             # 3. Fusion Logic
-            # Constraint: ML is ADVISORY. It can refine (elevate) risk but cannot override hard rules.
-            # To preserve safety and explainability, we BOUND the ML influence:
-            # - ML cannot downgrade a rule score (Safety).
-            # - ML cannot elevate a score by more than 20 points (Stability/conservative uplift).
+            # Previous logic was too restrictive (min/max). 
+            # New Logic: Weighted Average to allow ML to have a stronger voice.
+            # We give ML 60% weight and Rules 40% weight to make it "stronger".
             
-            # bounded_ml_contribution = min(rule_score + 20, ml_score)
-            # final_score = max(rule_score, bounded_ml_contribution)
-            # Simplified:
-            final_score = max(rule_score, min(rule_score + 20, ml_score))
+            weighted_score = (rule_score * 0.4) + (ml_score * 0.6)
             
-            # Severity Hierarchy (Strictly Low/Medium/High)
-            sev_map = {"Low": 1, "Medium": 2, "High": 3}
-            r_val = sev_map.get(rule_severity, 1)
-            m_val = sev_map.get(ml_severity, 1)
+            # Safety checks:
+            # If Rule says Critical (>90), we shouldn't drop it too much.
+            if rule_score > 90:
+                final_score = max(weighted_score, 85)
+            # If Rule says High (>70), ensure we stay at least Medium-High
+            elif rule_score > 70:
+                final_score = max(weighted_score, 60)
+            else:
+                final_score = weighted_score
+                
+            # Cap at 100
+            final_score = min(100, int(final_score))
             
-            # Determine Final Severity based on score thresholds to keep it consistent with score
-            # (Instead of just maxing the labels, we largely trust the final_score)
+            # Severity Hierarchy
             if final_score >= 80:
                 final_severity = "High"
             elif final_score >= 40:
@@ -47,20 +50,21 @@ class RiskEngine:
             else:
                 final_severity = "Low"
             
-            # Add ML factors for explainability if it influenced the score
-            if final_score > rule_score:
-                uplift = final_score - rule_score
-                rule_factors.append(f"ML Analysis refined risk score (+{int(uplift)})")
+            # Add ML factors for explainability
+            if final_score != rule_score:
+                diff = final_score - rule_score
+                direction = "+" if diff > 0 else ""
+                rule_factors.append(f"ML Model adjusted risk ({direction}{int(diff)})")
             
             # 4. Attach Result
             finding["risk"] = {
-                "score": int(final_score),
+                "score": final_score,
                 "severity": final_severity,
                 "factors": rule_factors,
                 "ml_analysis": {
                     "predicted_severity": ml_severity,
                     "confidence_score": int(ml_score),
-                    "model_used": "RandomForestClassifier (Ensemble)",
+                    "model_used": "RandomForestClassifier (En200)",
                     "top_features": ml_top_features
                 }
             }

@@ -12,7 +12,7 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 # Flash model chosen for low-latency, short-form explanatory output (not analysis or reasoning)
 GEMINI_MODEL = "gemini-3-flash-preview" 
 
-ALLOWED_KEYS = {"severity", "risk_score", "risk_factors", "ml_summary"}
+ALLOWED_KEYS = {"severity", "risk_score", "risk_factors", "ml_summary", "prompt_type", "category", "pattern"}
 
 def sanitize_input(data):
     return {k: data[k] for k in ALLOWED_KEYS if k in data}
@@ -23,34 +23,56 @@ def build_prompt(data):
     risk_score = data.get("risk_score", "Unknown")
     risk_factors = "\n".join([f"- {f}" for f in data.get("risk_factors", [])])
     ml_summary = "\n".join([f"- {m}" for m in data.get("ml_summary", [])])
+    prompt_type = data.get("prompt_type", "explain")
+    category = data.get("category", "General Secret")
+    pattern = data.get("pattern", "Suspicious Pattern")
 
-    template = f"""You are an AI explanation assistant for a security tool.
+    base_instruction = """You are an AI explanation assistant for a security tool.
 
 You MUST:
-- Explain the risk ONLY using the provided facts
-- NEVER speculate
+- Explain what the detected vulnerability is generally (e.g., "What is an AWS Key?")
+- Explain the specific risk context based *only* on the provided factors
+- NEVER speculate about the target's internal network unless stated in factors
 - NEVER contradict severity
-- NEVER suggest exploitation
-- NEVER downplay risk
-- NEVER generate new technical claims
-- NEVER mention numbers, percentages, feature weights, or internal scoring
+- NEVER suggest exploitation steps
 - ALWAYS state that the final severity is enforced by security rules, and that machine learning is advisory only
 
 Tone:
 - Explanatory, not authoritative
-- Use bullet points for clarity
-- No markdown bold/italics
 - Professional and concise
+- No markdown bold/italics
+"""
 
-Required phrasing:
-- Say that security rules determined the severity
-- Say that machine learning assisted or supported the assessment
-- NEVER say that machine learning classified, decided, or determined severity
+    if prompt_type == "executive":
+        task_instruction = f"""
+Task: Generate an Executive Summary for a potential {category} leak.
+1. Focus on business impact (e.g., "Exposure of {category} can lead to data breaches/financial loss").
+2. Explain *why* this specific finding is rated {severity} based on the provided factors.
+3. Keep it very concise (2-3 sentences max).
+4. Start with: "Executive Summary:"
+"""
+    elif prompt_type == "client":
+        task_instruction = f"""
+Task: Simplify for Client / Non-Technical Stakeholder.
+1. Explain what a "{category}" is in simple terms (analogy allowed).
+2. Explain why exposing it is risky.
+3. Reference the specific risk factors (like whether it is Valid or Active) in simple terms.
+4. Start with: "Client Brief:"
+"""
+    else: # "explain" (default)
+        task_instruction = f"""
+Task: Explain this {category} Vulnerability.
+1. Start with the required sentence: "The severity was determined by security rules, with machine learning providing additional contextual support."
+2. Explain what a {category} is and why it was flagged.
+3. Justify the {severity} rating using the specific list of "Factors" provided below.
+4. If ML analysis is present, mention which features (e.g. Entropy, Validation) contributed.
+"""
 
-The explanation MUST include a sentence of the form:
-"The severity was determined by security rules, with machine learning providing additional contextual support."
+    template = f"""{base_instruction}
 
 Input:
+Category: {category}
+Pattern: {pattern}
 Severity: {severity}
 Risk Score: {risk_score}
 Factors:
@@ -58,11 +80,7 @@ Factors:
 ML Summary:
 {ml_summary}
 
-Task:
-1. Start with the required sentence about security rules and ML support.
-2. Provide a list of specific reasons for the severity using bullet points (•).
-3. cite the specific items from "Factors" in these bullet points.
-4. Keep it concise."""
+{task_instruction}"""
     return template
 
 def call_llm(prompt):
