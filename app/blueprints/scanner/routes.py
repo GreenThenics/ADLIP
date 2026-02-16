@@ -375,3 +375,42 @@ def category_heatmap():
         return jsonify({"error": str(e)}), 500
 
 
+
+from app.utils.graph_builder import build_attack_surface_graph
+
+@scanner_bp.route("/attack_surface/<task_id>", methods=["GET"])
+def get_attack_surface_graph(task_id):
+    try:
+        db = mongo.cx.get_default_database()
+        tasks_coll = db.get_collection("tasks")
+        js_coll = db.get_collection("js_files")
+        leaks_coll = db.get_collection("leaks")
+        
+        # 1. Fetch Task
+        task = tasks_coll.find_one({"_id": ObjectId(task_id)})
+        if not task:
+            return jsonify({"error": "Task not found"}), 404
+            
+        # 2. Fetch JS Files
+        js_files = list(js_coll.find({"task_id": task_id}))
+        
+        # 3. Fetch Leaks
+        leaks = list(leaks_coll.find({"task_id": task_id}))
+        
+        # 4. Build Graph
+        # Convert _id to strings for JSON serialization inside builder?
+        # The builder handles it if we pass raw docs, but let's be safe.
+        # Actually builder access .get("_id") and converts to string.
+        
+        graph_data = build_attack_surface_graph(task, js_files, leaks)
+        
+        return jsonify(graph_data)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@scanner_bp.route("/attack_surface_view/<task_id>")
+def view_attack_surface(task_id):
+    # Check if task exists first? Not strictly necessary for rendering template
+    return render_template("attack_surface.html", task_id=task_id)

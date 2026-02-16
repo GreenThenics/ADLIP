@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attack Surface Map | ADLIP</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+
+        #graph-container {
+            width: 100vw;
+            height: 100vh;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+
+        .node circle {
+            stroke: #fff;
+            stroke-width: 1.5px;
+            transition: all 0.3s;
+        }
+
+        text {
+            font-family: 'Inter', sans-serif;
+            font-size: 12px;
+            fill: #ffffff;
+            pointer-events: none;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+            font-weight: 500;
+        }
+
+        .link {
+            stroke: #475569;
+            stroke-opacity: 0.6;
+            stroke-width: 1px;
+        }
+
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            background: rgba(15, 23, 42, 0.9);
+            border: 1px solid #334155;
+            padding: 8px 12px;
+            border-radius: 6px;
+            pointer-events: none;
+            font-size: 0.8rem;
+            display: none;
+            backdrop-filter: blur(4px);
+            z-index: 10;
+        }
+
+        /* Sidebar */
+        #detailsPanel {
+            position: absolute;
+            top: 0;
+            right: -400px;
+            width: 350px;
+            height: 100vh;
+            background: rgba(30, 41, 59, 0.95);
+            border-left: 1px solid #334155;
+            padding: 20px;
+            transition: right 0.3s ease-in-out;
+            overflow-y: auto;
+            backdrop-filter: blur(10px);
+            z-index: 20;
+        }
+
+        #detailsPanel.open {
+            right: 0;
+        }
+
+        .risk-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            font-size: 0.75rem;
+        }
+
+        .risk-high {
+            background: rgba(239, 68, 68, 0.2);
+            color: #fca5a5;
+            border: 1px solid #ef4444;
+        }
+
+        .risk-medium {
+            background: rgba(245, 158, 11, 0.2);
+            color: #fcd34d;
+            border: 1px solid #f59e0b;
+        }
+
+        .risk-low {
+            background: rgba(16, 185, 129, 0.2);
+            color: #6ee7b7;
+            border: 1px solid #10b981;
+        }
+
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(15, 23, 42, 0.8);
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid #334155;
+            z-index: 5;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="graph-container"></div>
+
+    <div class="control-panel">
+        <h5 class="mb-2 text-info">Attack Surface Map</h5>
+        <div class="small text-secondary mb-2">Drag to explore. Scroll to zoom.</div>
+        <button class="btn btn-sm btn-outline-light" onclick="resetZoom()">Reset View</button>
+        <a href="/dashboard" class="btn btn-sm btn-outline-secondary ms-2">Back to Dashboard</a>
+    </div>
+
+    <div id="tooltip"></div>
+
+    <div id="detailsPanel">
+        <button class="btn-close btn-close-white mb-3" onclick="closePanel()"></button>
+        <h4 id="panelTitle" class="mb-3 text-break">Detail View</h4>
+        <div id="panelContent">
+            <p class="text-secondary">Select a node to view details.</p>
+        </div>
+    </div>
+
+    <script>
+        const taskId = "{{ task_id }}";
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        const svg = d3.select("#graph-container").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .call(d3.zoom().on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            }))
+            .append("g");
+
+        const g = svg.append("g");
+
+        // Force Simulation
+        const simulation = d3.forceSimulation()
+            .force("link", d3.forceLink().id(d => d.id).distance(100))
+            .force("charge", d3.forceManyBody().strength(-300))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collide", d3.forceCollide().radius(d => d.val * 2 + 10));
+
+        // Fetch Data
+        fetch(`/api/attack_surface/${taskId}`)
+            .then(r => r.json())
+            .then(graph => {
+                const nodes = graph.nodes;
+                const links = graph.links;
+
+                // Color mapping
+                const colorMap = {
+                    "high": "#ef4444",
+                    "medium": "#f59e0b",
+                    "low": "#3b82f6",
+                    "domain": "#8b5cf6"
+                };
+
+                // Type icons (optional, using colored circles for now)
+
+                const link = g.append("g")
+                    .attr("class", "links")
+                    .selectAll("line")
+                    .data(links)
+                    .enter().append("line")
+                    .attr("class", "link");
+
+                const node = g.append("g")
+                    .attr("class", "nodes")
+                    .selectAll("circle")
+                    .data(nodes)
+                    .enter().append("circle")
+                    .attr("r", d => d.val * 1.5) // Scale size
+                    .attr("fill", d => d.risk_level === "high" ? colorMap.high : (d.risk_level === "medium" ? colorMap.medium : (d.type === "domain" ? colorMap.domain : colorMap.low)))
+                    .attr("stroke", d => d.type === "credential_leak" ? "#fff" : "none")
+                    .call(d3.drag()
+                        .on("start", dragstarted)
+                        .on("drag", dragged)
+                        .on("end", dragended));
+
+                // Labels (show only for domain/subdomain/leaks to avoid clutter)
+                const label = g.append("g")
+                    .selectAll("text")
+                    .data(nodes)
+                    .enter().append("text")
+                    .text(d => d.type === "domain" || d.type === "subdomain" || d.risk_level === "high" ? d.label : "")
+                    .attr("dx", 15)
+                    .attr("dy", 4);
+
+                // Simulation Tick
+                simulation
+                    .nodes(nodes)
+                    .on("tick", ticked);
+
+                simulation.force("link")
+                    .links(links);
+
+                function ticked() {
+                    link
+                        .attr("x1", d => d.source.x)
+                        .attr("y1", d => d.source.y)
+                        .attr("x2", d => d.target.x)
+                        .attr("y2", d => d.target.y);
+
+                    node
+                        .attr("cx", d => d.x)
+                        .attr("cy", d => d.y);
+
+                    label
+                        .attr("x", d => d.x)
+                        .attr("y", d => d.y);
+                }
+
+                // Interactions
+                const tooltip = d3.select("#tooltip");
+
+                node.on("mouseover", (event, d) => {
+                    tooltip.style("display", "block")
+                        .html(`<strong>${d.label}</strong><br/><span class="text-secondary">${d.type}</span>`)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 10) + "px");
+                    d3.select(event.currentTarget).attr("stroke", "#fff").attr("stroke-width", 3);
+                })
+                    .on("mouseout", (event, d) => {
+                        tooltip.style("display", "none");
+                        d3.select(event.currentTarget).attr("stroke", d.type === "credential_leak" ? "#fff" : "none").attr("stroke-width", 1.5);
+                    })
+                    .on("click", (event, d) => showDetails(d));
+
+            })
+            .catch(err => console.error("Error loading graph:", err));
+
+        // Drag functions
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+
+        // Sidebar Details
+        function showDetails(node) {
+            const panel = document.getElementById("detailsPanel");
+            const title = document.getElementById("panelTitle");
+            const content = document.getElementById("panelContent");
+
+            panel.classList.add("open");
+            title.innerText = node.label;
+
+            let html = `
+                <div class="mb-3">
+                    <span class="badge bg-secondary mb-2">${node.type.toUpperCase()}</span>
+                    <span class="risk-badge risk-${node.risk_level}">${node.risk_level.toUpperCase()} RISK</span>
+                </div>
+            `;
+
+            // Meta details
+            if (node.meta) {
+                html += `<div class="bg-dark p-3 rounded border border-secondary border-opacity-25">`;
+                for (const [key, val] of Object.entries(node.meta)) {
+                    html += `<div class="mb-1"><small class="text-secondary text-uppercase">${key}:</small> <span class="text-light text-break">${val}</span></div>`;
+                }
+                html += `</div>`;
+            }
+
+            content.innerHTML = html;
+        }
+
+        function closePanel() {
+            document.getElementById("detailsPanel").classList.remove("open");
+        }
+
+        function resetZoom() {
+            svg.transition().duration(750).call(
+                d3.zoom().transform,
+                d3.zoomIdentity,
+                d3.zoomTransform(svg.node()).invert([width / 2, height / 2])
+            );
+        }
+    </script>
+</body>
+
+</html>

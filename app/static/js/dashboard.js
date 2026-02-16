@@ -357,6 +357,12 @@ function viewScan(taskId, url) {
     localStorage.setItem("activeScanId", taskId);
     localStorage.setItem("activeScanUrl", url);
 
+    const graphBtn = document.getElementById("viewAttackSurfaceBtn");
+    if (graphBtn) {
+        graphBtn.href = `/api/attack_surface_view/${taskId}`;
+        graphBtn.style.display = "inline-block";
+    }
+
     resetScanView();
     pollTask(taskId);
 }
@@ -411,6 +417,13 @@ document.getElementById("startScanBtn").addEventListener("click", () => {
                 // Save state immediately
                 localStorage.setItem("activeScanId", d.task_id);
                 localStorage.setItem("activeScanUrl", fullUrl);
+
+                // Show Attack Surface Button
+                const graphBtn = document.getElementById("viewAttackSurfaceBtn");
+                if (graphBtn) {
+                    graphBtn.href = `/api/attack_surface_view/${d.task_id}`;
+                    graphBtn.style.display = "inline-block";
+                }
 
                 updateProgress("queued");
                 pollTask(d.task_id);
