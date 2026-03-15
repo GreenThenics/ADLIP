@@ -764,12 +764,15 @@ function renderLeaksTable() {
             if (score >= 70 || severity === "high" || severity === "critical") {
                 sevClass = "bg-danger";
                 scoreColor = "#ef4444";
+                sevDisplay = "HIGH";
             } else if (score >= 40 || severity === "medium") {
                 sevClass = "bg-warning text-dark";
                 scoreColor = "#f59e0b";
+                sevDisplay = "MEDIUM";
             } else {
                 sevClass = "bg-success";
                 scoreColor = "#10b981";
+                sevDisplay = "LOW";
             }
         } else {
             // Risk analysis hasn't run yet

@@ -17,7 +17,7 @@ def create_app():
     from .blueprints.health import health_bp
     from .blueprints.tasks import tasks_bp
 
-    load_patterns_from_db("/patterns")
+    load_patterns_from_db("/patterns") # type: ignore
 
     app.register_blueprint(scanner_bp, url_prefix="/api")
     app.register_blueprint(health_bp, url_prefix="/api")

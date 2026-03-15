@@ -32,23 +32,29 @@ def calculate_base_score(finding):
     elif validity == "plausible":
         score += 30
         factors.append("Secret structure is PLAUSIBLE")
+    elif validity == "unknown":
+        score += 15
+        factors.append("Secret validity UNKNOWN (Pending Validation)")
     else:
         # Invalid secrets start low, but context might raise it
         score += 0
         
-    # --- Rule 2: Secret Category Impact ---
-    # Normalize category for matching (remove special chars)
-    cat_norm = category.replace("_", "").replace(" ", "")
+    # --- Rule 2: Secret Category / Rule Impact ---
+    # Normalize category and rule_id for matching (remove special chars)
+    cat_norm = category.replace("_", "").replace(" ", "").upper()
+    rule_id = finding.get("rule_id", finding.get("pattern", "")).upper()
+    rule_norm = rule_id.replace("_", "").replace(" ", "")
     
-    CRITICAL_cats = ["AWS", "GCP", "AZURE", "SLACK", "STRIPE", "PRIVATEKEY"]
-    HIGH_cats = ["DBPASSWORD", "APIKEY", "JWT", "ACCESSKEY", "SECRET"]
+    CRITICAL_cats = ["AWS", "GCP", "AZURE", "SLACK", "STRIPE", "PRIVATEKEY", "GITHUBTOKEN"]
+    HIGH_cats = ["DBPASSWORD", "APIKEY", "JWT", "ACCESSKEY", "SECRETKEY"]
     
-    if any(c in cat_norm for c in CRITICAL_cats):
-        score += 25
-        factors.append(f"Critical Secret Type: {category}")
-    elif any(c in cat_norm for c in HIGH_cats):
-        score += 15
-        factors.append(f"High-Value Secret Type: {category}")
+    # Check either category name or rule/pattern name
+    if any(c in cat_norm or c in rule_norm for c in CRITICAL_cats):
+        score += 50
+        factors.append(f"Critical Secret Type: {rule_id or category}")
+    elif any(c in cat_norm or c in rule_norm for c in HIGH_cats):
+        score += 35
+        factors.append(f"High-Value Secret Type: {rule_id or category}")
     else:
         score += 5
         
@@ -67,7 +73,8 @@ def calculate_base_score(finding):
 
     # --- Rule 4: Heuristics ---
     # Penalty for generic/weak secrets if not validated
-    if "generic" in category.lower() and validity != "confirmed":
+    is_critical_or_high = any(c in cat_norm or c in rule_norm for c in CRITICAL_cats + HIGH_cats)
+    if "generic" in category.lower() and validity != "confirmed" and not is_critical_or_high:
         score = min(score, 40) # Cap generic at Medium unless validated
     
     # --- Scoring Normalization ---

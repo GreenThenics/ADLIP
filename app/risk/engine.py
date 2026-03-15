@@ -23,27 +23,24 @@ class RiskEngine:
             ml_score, ml_severity, ml_top_features = self.classifier.predict(finding)
             
             # 3. Fusion Logic
-            # Previous logic was too restrictive (min/max). 
-            # New Logic: Weighted Average to allow ML to have a stronger voice.
-            # We give ML 60% weight and Rules 40% weight to make it "stronger".
+            # Balance ML and Rules evenly (50/50).
             
-            weighted_score = (rule_score * 0.4) + (ml_score * 0.6)
+            weighted_score = (rule_score * 0.5) + (ml_score * 0.5)
             
-            # Safety checks:
-            # If Rule says Critical (>90), we shouldn't drop it too much.
-            if rule_score > 90:
-                final_score = max(weighted_score, 85)
-            # If Rule says High (>70), ensure we stay at least Medium-High
-            elif rule_score > 70:
+            # Safety checks: Priority is to not miss high-value secrets.
+            # If rules found something very dangerous, don't let ML drag it down.
+            if rule_score >= 80:
+                final_score = max(weighted_score, 80)
+            elif rule_score >= 60:
                 final_score = max(weighted_score, 60)
             else:
-                final_score = weighted_score
+                final_score = max(weighted_score, rule_score)
                 
             # Cap at 100
             final_score = min(100, int(final_score))
             
             # Severity Hierarchy
-            if final_score >= 80:
+            if final_score >= 70:
                 final_severity = "High"
             elif final_score >= 40:
                 final_severity = "Medium"

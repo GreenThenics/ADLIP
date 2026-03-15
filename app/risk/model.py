@@ -52,12 +52,14 @@ class RiskClassifier:
         
         # 2. Category Score
         cat = finding.get("category", "").upper().replace("_", "").replace(" ", "")
-        crit_cats = ["AWS", "GCP", "AZURE", "PRIVATEKEY", "SLACK", "STRIPE"]
-        high_cats = ["APIKEY", "JWT", "DB", "ACCESSKEY", "SECRET"]
+        rule_id = finding.get("rule_id", finding.get("pattern", "")).upper().replace("_", "").replace(" ", "")
         
-        if any(c in cat for c in crit_cats):
+        crit_cats = ["AWS", "GCP", "AZURE", "PRIVATEKEY", "SLACK", "STRIPE", "GITHUBTOKEN"]
+        high_cats = ["APIKEY", "JWT", "DB", "ACCESSKEY", "SECRETKEY"]
+        
+        if any(c in cat or c in rule_id for c in crit_cats):
             cat_score = 2
-        elif any(c in cat for c in high_cats):
+        elif any(c in cat or c in rule_id for c in high_cats):
             cat_score = 1
         else:
             cat_score = 0
@@ -138,9 +140,11 @@ class RiskClassifier:
             # Label Logic (Simulate Ground Truth)
             score = 0
             if is_valid: score += 50
-            if is_plausible: score += 20
-            if cat_score == 2: score += 30
-            elif cat_score == 1: score += 15
+            elif is_plausible: score += 20
+            else: score += 10
+            
+            if cat_score == 2: score += 50
+            elif cat_score == 1: score += 30
             
             # Entropy usually correlates with risk (higher entropy = more random/secure/real secret)
             if entropy > 4.5: score += 10
